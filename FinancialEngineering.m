@@ -1,4 +1,6 @@
-close all; clear all; clc;
+%% Financial Engineering in Matlab
+
+close all; clear; clc;
 
 stock='SPY';
 
@@ -12,12 +14,12 @@ date_from=datenum(cfrom);
 date_to=datenum(cto);
   
 adjClose = fetch(yahoo,stock,'adj close',date_from,date_to);
-div = fetch(yahoo,stock,date_from,date_to,'v')
+div = fetch(yahoo,stock,date_from,date_to,'v');
 returns= (adjClose(2:end,2)./adjClose(1:end-1,2)-1);
 logreturns=log(adjClose(2:end,2)./adjClose(1:end-1,2)-1);
 
 volat_d = std(returns);             % Daily volatility
-volat = volat_d * sqrt(lookback)    % Annualized volatility
+volat = volat_d * sqrt(lookback);    % Annualized volatility
 
 % plot adjusted Close price of  and mark days when dividends
 % have been announced
@@ -28,6 +30,15 @@ ylabel('SPY (US$)');
 clable=strcat(cfrom,' to ',cto);
 xlabel(clable);
 
+%clear all; close all; clc;
+%c = yahoo;
+%AdjPrice = fetch(c,'IBM','Adj Close','08/01/10','08/25/15')
+%plot(AdjPrice(2))
+%tday = datestr(AdjPrice(1:end,1),'yyyymmdd')
+%tday=datestr(datenum(tday, 'mm/dd/yyyy'), 'yyyymmdd'); % convert the format into yyyymmdd.
+
+%% Cox-Ross-Rubinstein
+% Pricing american options with Cox-Ross-Rubinstein method 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Calculation inputs
 %side = 'call';                             % Option side
@@ -37,86 +48,79 @@ xlabel(clable);
 %riskfree = .0007;		% Risk-free rate, Yield on 3m US Treasury Yields, as of 2012/11/05
 %divyield = .0199;		% Dividend yield on S&P 500 (IVV), as of 2012/11/05
 %tte = 30; %(datetime(2012,12,22) - datetime(2012,11, 6)).days  	# Time to expiration in days
+close all; clear; clc;
 side = 'call';  style = 'american';  price = 142.410;
 strike = 140.0; riskfree = .0001; divyield = .0199; tte = 46;
+volat = 0.182;
+%Pre-processing of inputs and calculation of per-step figures
+n = 8;							    % Depth of binomial tree (levels are numbered from 0 to n)
+tdelta = tte / (n * 365);		    % Time delta per one step (as fraction of year)
+u = exp(volat * sqrt(tdelta));		% Up movement per step
+d = 1/u;							% Down movement per step
+rf = exp(riskfree * tdelta) - 1;	% Risk-free rate per step
+dy = exp(divyield * tdelta) - 1;    % Dividend yield per step
+pu = (1+rf-dy-d) / (u-d);		    % Probability of up movement
+pd = 1 - pu;			            % Probability of down movement
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%clear all; close all; clc;
-%c = yahoo;
-%AdjPrice = fetch(c,'IBM','Adj Close','08/01/10','08/25/15')
-%plot(AdjPrice(2))
-%tday = datestr(AdjPrice(1:end,1),'yyyymmdd')
-%tday=datestr(datenum(tday, 'mm/dd/yyyy'), 'yyyymmdd'); % convert the format into yyyymmdd.
+% Generate terminal nodes of binomial tree
+level = {};
+for i = 0:n
+    pr = (price * (d^i) * (u^(n-i))); 	
+	% Option value at the node (depending on side)
+    if strcmp(side,'call')
+        ov = max(0.0, pr-strike);
+    else
+        ov = max(0.0, strike-pr);
+    end;
+    level{i+1} = {pr, ov};
+    %level = [level, ov];%level.append((pr, ov));
+	fprintf('Node Price %.3f, Option Value %.3f\n', pr, ov)
+end;
 
-%% Financial Engineering in Matlab
+levels = {'None','None','None'}; % Remember levels 0,1,2 for the greeks
 
-%% Numerical Methods (Option Pricing Model)
-% Pricing European options with the Binomial Tree 
-clear
-s.M = s.N + 1 % Number of terminal nodes of tree
-s.u = 1 + s.pu % Expected value in the up state
-s.d = 1 - self.pd % Expected value in the down state
-s.qu = (math.exp((self.r-self.div)*self.dt) - self.d) / (self.u-self.d)
-s.qd = 1-self.qu
-% Pricing American options with the Binomial Tree
-% Overview of Numerical Methods 
-% Finite-difference Methods for One-factor Models 
-% Further Finite-difference Methods for One-factor Models
-% Monte Carlo Simulation
-% https://github.com/alapala/finite_difference_methods
-%%%%%%%%%%%%%%% Problem and method parameters %%%%%%%%%%%%%%%%% 
-s = 0; k = 0; r = 0; t = 0; sd = 0; n = 0;
-u = exp(sd*sqrt(t/n));
-d = 1/u;
-p = (exp(r*t/n) - d) / (u - d);
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% reduce binomial tree
+fprintf('Reduce Binomial Tree\n')
+for i = n-1:-1:0
+    % fprintf('i: %d\n',i)
+    levelNext = {};
+    fprintf('Tree level %i\n', i)
+    for j = 0:i     % Iterate through nodes from highest to lowest price
+        % fprintf('j: %d\n',j)
+        node_u = level{j+1};
+        node_d = level{j+2};
+        % Instrument's price at the node
+        pr = node_d{1} / d;  
+        % Option value at the node (depending on side)
+        ov = (node_d{2} * pd + node_u{2} * pu) / (1 + rf);	
+        if strcmp(style,'american') % American options can be exercised anytime
+            if strcmp(side,'call')
+                ov = max(ov, pr-strike);
+            else 
+                ov = max(ov, strike-pr);
+            end;
+        end;
+        levelNext{j+1} = {pr, ov};
+        fprintf('Node Price %.3f, Option Value %.3f\n', pr, ov)
+    end;
+    level = levelNext;
+    if j<=2
+        if j>0
+            levels{j}=level; % save level 0,1,2 of the tree
+        end;
+    end;
+end;
 
-% Loop over each node and calculate the Cox Ross Rubinstein underlying price tree
-priceTree = nan(steps+1,steps+1);
-priceTree(1,1) = S0;
-for idx = 2:steps+1
-    priceTree(1:idx-1,idx) = priceTree(1:idx-1,idx-1)*u;
-    priceTree(idx,idx) = priceTree(idx-1,idx-1)*d;
-end
-
-% Calculate the value at expiry
-valueTree = nan(size(priceTree));
-switch oType
-    case 'PUT'
-        valueTree(:,end) = max(X-priceTree(:,end),0);
-    case 'CALL'
-        valueTree(:,end) = max(priceTree(:,end)-X,0);
-end
-
-% Loop backwards to get values at the earlier times
-steps = size(priceTree,2)-1;
-for idx = steps:-1:1
-    valueTree(1:idx,idx) = ...
-        exp(-r*dt)*(p*valueTree(1:idx,idx+1) ...
-        + (1-p)*valueTree(2:idx+1,idx+1));
-    if earlyExercise
-        switch oType
-            case 'PUT'
-                valueTree(1:idx,idx) = ...
-                    max(X-priceTree(1:idx,idx),valueTree(1:idx,idx));
-            case 'CALL'
-                valueTree(1:idx,idx) = ...
-                    max(priceTree(1:idx,idx)-X,valueTree(1:idx,idx));
-        end
-    end
-end
-
-% Output the option price
-oPrice = valueTree(1)
-
+%% Finite-Difference Methods
 % Explicit finite difference
-
 % Implicit finite difference
-
 % Crank-Nicolson finite difference
 
+%% Monte Carlo Simulation
 
 %% Time Series Analysis
+
 %% Preductive Model
 
 %% The value of time
