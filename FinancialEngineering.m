@@ -1,5 +1,7 @@
-%% Financial Engineering in Matlab
+%% Financial Engineering with MATLAB(R)
 
+%% Load in some data
+% Again we'll import Bund data sampled minutely
 close all; clear; clc;
 
 stock='SPY';
@@ -112,12 +114,80 @@ for i = n-1:-1:0
     end;
 end;
 
-%% Finite-Difference Methods
-% Explicit finite difference
-% Implicit finite difference
-% Crank-Nicolson finite difference
-
+%% Black-Scholes-Merton
 %% Monte Carlo Simulation
+%% Explicit Finite Difference Method/American option
+close all; clear; clc;
+
+S0 = 50; K = 50; r = 0.1; T = 5.0/12.0;
+sigma = 0.4; Smax = 100; M = 100; N = 1000; 
+is_call = false;
+
+dS = Smax / M; dt = T /  N;
+i_values = 0:1:M; 
+j_values = 0:1:N; 
+grid = zeros(M+1, N+1);
+boundary_conds = linspace(0,Smax,M+1);
+
+% setup_boundary_conditions
+if is_call
+    grid(:, end) = max(boundary_conds - K, 0);
+    grid(end, :) = (Smax - K) * exp(-r * dt * (N-j_values));
+else
+    grid(:, end) = max(K-boundary_conds, 0);
+    grid(1, :) = (K - Smax) * exp(-r * dt * (N-j_values));
+end;
+
+% setup_coefficients
+a = 0.5*dt*((sigma.^2) * (i_values.^2) - r*i_values);
+b = 1 - dt*((sigma.^2) * (i_values.^2) + r);
+c = 0.5*dt*((sigma.^2) * (i_values.^2) + r*i_values);
+
+% traverse_grid
+for j = j_values:-1:1
+    for i = M:-1:2
+        grid(i,j) = a(i)*grid(i-1,j+1) + b(i)*grid(i,j+1) + c(i)*grid(i+1,j+1);
+    end;
+end;
+
+% interpolate
+% """ Use piecewise linear interpolation on the initial grid column to get the closest price at S0.
+%
+interp1q(S0, boundary_conds, grid(:, 1))
+
+%% Implicit Finite Difference Method/American option
+
+% setup_coefficients
+alpha = 0.25*dt*( (sigma.^2)*(i_values.^2) - r*i_values);
+beta = -dt*0.5*( (sigma.^2)*(i_values.^2) + r);
+gamma = 0.25*dt*( (sigma.^2)*(i_values.^2) + r*i_values);
+
+M1 = -diag(alpha(2:M), -1) + diag(1-beta(1:M)) - diag(gamma(1:M-1), 1);
+M2 = diag(alpha(2:M), -1) + diag(1+beta(1:M)) + diag(gamma(1:M-1), 1);
+
+% traverse_grid
+% """ Solve using linear systems of equations """
+[P, L, U]= lu(coeffs);
+aux = zeros(M-1);
+for j=N:-1:1
+    aux(0) = dot(-a(1), grid(0, j));
+    x1 = solve(L, grid(1:M, j+1)+aux);
+    x2 = solve(U, x1);
+    grid(1:M, j) = x2;
+end;
+    
+% interpolate
+% """ Use piecewise linear interpolation on the initial grid column to get the closest price at S0.
+%
+interp1q(S0, boundary_conds, grid(:, 0))
+
+
+%% Crank-Nicolson/American option
+%% Non-path-dependent interest rate product
+%% Path-dependent interest rate product
+
+%% Two-factor explicit
+%% Two-factor implicit
 
 %% Time Series Analysis
 
