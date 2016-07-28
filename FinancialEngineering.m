@@ -119,33 +119,34 @@ end;
 %% Explicit Finite Difference Method/American option
 close all; clear; clc;
 
-S0 = 50; K = 50; r = 0.1; T = 5.0/12.0;
+S0 = 50; K = 50; r = 0.1; T = 5/12;
 sigma = 0.4; Smax = 100; M = 100; N = 1000; 
 is_call = false;
 
 dS = Smax / M; dt = T /  N;
-i_values = 0:1:M; 
-j_values = 0:1:N; 
+i_values = 0:1:M-1; 
+j_values = 0:1:N-1; 
 grid = zeros(M+1, N+1);
 boundary_conds = linspace(0,Smax,M+1);
 
 % setup_boundary_conditions
 if is_call
     grid(:, end) = max(boundary_conds - K, 0);
-    grid(end, :) = (Smax - K) * exp(-r * dt * (N-j_values));
+    grid(end, 1:end-1) = (Smax - K) * exp(-r * dt * (N-j_values));
 else
     grid(:, end) = max(K-boundary_conds, 0);
-    grid(1, :) = (K - Smax) * exp(-r * dt * (N-j_values));
+    grid(1, 1:end-1) = (K - Smax) * exp(-r * dt * (N-j_values));
+   
 end;
 
 % setup_coefficients
-a = 0.5*dt*((sigma.^2) * (i_values.^2) - r*i_values);
-b = 1 - dt*((sigma.^2) * (i_values.^2) + r);
-c = 0.5*dt*((sigma.^2) * (i_values.^2) + r*i_values);
+a = 0.5*dt*((sigma^2) * (i_values.^2) - r*i_values);
+b = 1 - dt*((sigma^2) * (i_values.^2) + r);
+c = 0.5*dt*((sigma^2) * (i_values.^2) + r*i_values);
 
 % traverse_grid
-for j = j_values:-1:1
-    for i = M:-1:2
+for j = length(j_values):-1:1
+    for i = 3:M
         grid(i,j) = a(i)*grid(i-1,j+1) + b(i)*grid(i,j+1) + c(i)*grid(i+1,j+1);
     end;
 end;
@@ -153,14 +154,58 @@ end;
 % interpolate
 % """ Use piecewise linear interpolation on the initial grid column to get the closest price at S0.
 %
-interp1q(S0, boundary_conds, grid(:, 1))
+interp1q(boundary_conds, grid(:, 1), S0)
 
 %% Implicit Finite Difference Method/American option
+close all; clear; clc;
+
+S0 = 50; K = 50; r = 0.1; T = 5/12;
+sigma = 0.4; Smax = 100; M = 100; N = 1000; 
+is_call = false;
+
+dS = Smax / M; dt = T /  N;
+i_values = 0:1:M-1; 
+j_values = 0:1:N-1; 
+grid = zeros(M+1, N+1);
+boundary_conds = linspace(0,Smax,M+1);
+
+% setup_boundary_conditions
+if is_call
+    grid(:, end) = max(boundary_conds - K, 0);
+    grid(end, 1:end-1) = (Smax - K) * exp(-r * dt * (N-j_values));
+else
+    grid(:, end) = max(K-boundary_conds, 0);
+    grid(1, 1:end-1) = (K - Smax) * exp(-r * dt * (N-j_values));
+end;
 
 % setup_coefficients
-alpha = 0.25*dt*( (sigma.^2)*(i_values.^2) - r*i_values);
-beta = -dt*0.5*( (sigma.^2)*(i_values.^2) + r);
-gamma = 0.25*dt*( (sigma.^2)*(i_values.^2) + r*i_values);
+a = 0.5*(r*dt*i_values - (sigma^2)*dt*(i_values.^2));
+b = 1 + (sigma^2)*dt*(i_values.^2) + r*dt;
+c = -0.5*(r * dt*i_values + (sigma^2)*dt*(i_values.^2));
+
+coeffs = diag(a(3:M), -1) + diag(b(2:M)) + diag(c(2:M-1), 1);
+
+% traverse_grid
+% """ Solve using linear systems of equations """
+[P, L, U]= lu(coeffs);
+aux = zeros(M-1);
+for j=N:-1:1
+    aux(1) = dot(-a(2), grid(1, j));
+    x1 = L \ (grid(2:M, j+1)+aux(1));
+    x2 = U \ x1;
+    grid(2:M, j) = x2;
+end;
+
+% interpolate
+% """ Use piecewise linear interpolation on the initial grid column to get the closest price at S0.
+%
+interp1q(boundary_conds, grid(:, 1), S0)
+
+%% Crank-Nicolson/American option
+% setup_coefficients
+alpha = 0.25*dt*( (sigma^2)*(i_values.^2) - r*i_values);
+beta = -dt*0.5*( (sigma^2)*(i_values.^2) + r);
+gamma = 0.25*dt*( (sigma^2)*(i_values.^2) + r*i_values);
 
 M1 = -diag(alpha(2:M), -1) + diag(1-beta(1:M)) - diag(gamma(1:M-1), 1);
 M2 = diag(alpha(2:M), -1) + diag(1+beta(1:M)) + diag(gamma(1:M-1), 1);
@@ -179,10 +224,8 @@ end;
 % interpolate
 % """ Use piecewise linear interpolation on the initial grid column to get the closest price at S0.
 %
-interp1q(S0, boundary_conds, grid(:, 0))
+interp1q(boundary_conds, grid(:, 1), S0)
 
-
-%% Crank-Nicolson/American option
 %% Non-path-dependent interest rate product
 %% Path-dependent interest rate product
 
